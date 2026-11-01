@@ -87,13 +87,11 @@ The platform should support multiple ways of interacting with an application wit
 - Programmatic interfaces: Other applications and services can consume exposed functionality directly.
 - Background execution: Applications can perform scheduled or event-driven work without a user-facing interface.
 
-These interfaces should be treated as clients of application functionality, not as privileged extensions of the runtime. For example, a desktop WebView should not automatically inherit the capabilities granted to its application's backend. Instead, it should communicate through explicitly exposed interfaces, with the host mediating access where appropriate.
-
-This separation allows different hosts to provide different presentation experiences while keeping application logic independent of the presentation technology. UI hosting can be implemented incrementally, but the architecture must account for interface communication and security boundaries from the beginning.
+These interfaces are clients of application functionality, not privileged extensions of the runtime: a desktop WebView, for example, does not inherit the capabilities granted to its application's backend. §3.5 states the governing principle and §4.5 describes its place in the architecture.
 
 ### 1.5 Modularity and Embeddability
 
-The platform is intended to serve as a reusable foundation for different kinds of products and systems, rather than prescribing a single way of deploying or managing applications.
+The platform is intended to serve as a reusable foundation for different kinds of products and systems, rather than prescribing a single way of deploying or managing applications. This avoids requiring the project to implement every possible management or orchestration feature itself.
 
 It should be possible to use the platform as a complete application environment or to incorporate selected components into a larger system that provides its own management interfaces, orchestration, and operational policies.
 
@@ -127,6 +125,8 @@ The intended result is a modular foundation for building and composing software:
 ### 1.7 Initial Hosts and Product Evolution
 
 The first host is planned to be a desktop application that provides a graphical environment for managing and interacting with applications running on the platform. It will serve as the first complete user-facing demonstration and as a way to develop and use independent applications on the platform.
+
+This desktop host, Dashboard, will be developed as a separate project in its own repository and will consume this project as a library.
 
 The desktop host is not the platform's defining abstraction. It should consume the supervisor through programmatic interfaces, so that the supervisor can later support a server host or be embedded in other products without depending on the desktop implementation.
 
@@ -211,15 +211,7 @@ For example, an application might consume a database capability without knowing 
 
 This symmetry should not imply that local and remote services behave identically. Network latency, availability, consistency, and failure modes remain important differences that application interfaces must account for. The goal is to preserve a common application model while allowing hosts to adapt implementations and operational policy to their environments.
 
-### 2.6 Modularity and Embeddability
-
-The platform is intended to serve as a reusable foundation for different kinds of products and systems, rather than prescribing a single way of deploying or managing applications.
-
-A desktop host may use the complete platform to provide a personal application environment. A server host may use the same application model for persistent execution and remote services. An existing product may embed the runtime or selected supervisor services while supplying its own management experience, scheduler, routing, or scaling system.
-
-This separation avoids requiring the project to implement every possible management or orchestration feature itself. It also allows the underlying application and capability model to be reused without adopting a particular product interface.
-
-### 2.7 Project Goals
+### 2.6 Project Goals
 
 These motivations lead to the following high-level goals:
 
@@ -439,6 +431,8 @@ The provisional technology choices are:
 
 `deno_core` is attractive because it provides an embeddable foundation without requiring the project to adopt the complete Deno CLI or runtime architecture.
 
+`deno_core`'s API changes frequently between releases. The project pins an exact version and records each upgrade as an architectural decision.
+
 However, it does not provide the entire TypeScript development experience or npm compatibility by itself. Dependency resolution, TypeScript transpilation, package handling, and developer tooling will need to be assembled from appropriate components.
 
 These technology choices are provisional. The architecture should depend on the capabilities and responsibilities of the runtime rather than becoming unnecessarily coupled to a particular implementation.
@@ -507,19 +501,7 @@ Providers are part of the trusted computing base for the operations they expose.
 
 ### 4.5 Application Interfaces and UI Hosting
 
-Applications should be able to expose functionality through multiple interaction mechanisms without coupling their underlying logic to a particular presentation technology.
-
-The platform should accommodate:
-
-- Typed programmatic interfaces consumed by other applications.
-- Command-line interfaces.
-- Browser-based frontends.
-- Desktop frontends hosted in embedded WebViews.
-- Background jobs and event-driven operations.
-
-These interfaces should be treated as clients of application functionality rather than privileged extensions of the runtime.
-
-A web frontend, for example, should communicate with its application through explicitly exposed interfaces. It should not automatically inherit the application's database, filesystem, or other backend capabilities.
+Application interfaces follow the principle in §3.5: programmatic, command-line, browser, WebView, and background interfaces are clients of application functionality, and none of them inherits the application's backend capabilities.
 
 The platform should eventually provide standardized mechanisms for discovering, connecting to, and hosting application interfaces.
 
@@ -808,6 +790,8 @@ A capability is an object injected into an application's execution environment t
 
 Each granted capability is injected as a global object when the cell starts. There is no root object; a capability that has not been granted is simply absent.
 
+A capability's global is named by the grant name the application chooses in its manifest (§6.3), not by its contract. An application can therefore hold several grants of the same contract, such as two filesystem capabilities with different scopes, under different names.
+
 For example:
 
 ```ts
@@ -825,7 +809,7 @@ console.log(response);
 
 Each capability global represents a distinct interface and grant of authority. The host determines which individual capabilities are made available to each application.
 
-Capability globals must not shadow standard ECMAScript globals. A capability may use a name defined by a web standard, such as `console` or `fetch`, only if it implements that standard interface.
+Grant names must be valid JavaScript identifiers and must not collide with ECMAScript built-ins or the runtime's baseline globals (§7.5); the runtime refuses to start a cell whose manifest violates this. A grant may use a name defined by a web standard, such as `console` or `fetch`, only if its contract implements that standard interface.
 
 Capabilities may expose multiple related operations, and the host may provide different implementations of the same capability contract.
 
@@ -861,15 +845,14 @@ For example:
 ```ts
 {
   capabilities: {
-    "files@1": {
-      required: true
-    },
-    "database@2": {
-      required: true
-    }
+    notes:    { contract: "files@1", required: true },
+    shared:   { contract: "files@1", required: false },
+    database: { contract: "database@2", required: true }
   }
 }
 ```
+
+Each key is a grant name, which becomes the capability's global (§6.1). `contract` names the capability contract and its version.
 
 If the host does not support a required capability version, it cannot satisfy the application's requirements and should refuse to start the application.
 
@@ -999,6 +982,8 @@ An isolate provides an independent JavaScript execution environment, including i
 
 With `deno_core`, a runtime and its isolate are bound to the thread that created them. In-process execution therefore runs each cell on its own dedicated thread, which drives that cell's event loop. This mirrors the later stages, in which each instance runs in its own worker process.
 
+The supervisor and providers run on a separate, shared asynchronous runtime. A cell's capability operations reach them by sending a message (grant handle, method, and serialized arguments) over a channel and awaiting the reply. Fire-and-forget operations send a message without awaiting a reply, through a bounded channel that drops and counts messages when it is full rather than blocking the cell. These messages are the same ones that will cross the process boundary in Stage 2. The V8 platform is initialized once, on the main thread, before any cell thread starts.
+
 Applications communicate and share resources exclusively through capabilities provided by the host.
 
 A cell, as a logical unit, is independent of its eventual implementation unit. A cell may initially execute inside an isolate in the host process, but later execute inside a separate worker process or operating-system sandbox without changing its application-facing interfaces.
@@ -1064,6 +1049,8 @@ console.log(greet("world"));
 
 The module loader must prevent imports from escaping the application's source directory or accessing arbitrary external modules. Path normalization and symlink handling must be considered so that relative paths cannot bypass the source-directory boundary.
 
+The loader reads modules through a directory handle opened at the application's source root (for example, with `cap-std`), so `..` components and symlinks cannot escape it, and, where the operating system supports it, path resolution cannot race with changes to the filesystem. Modules are identified by virtual URLs such as `cell:///main.ts` rather than host paths, which keeps host paths out of stack traces and error messages. Filesystem capability providers use the same approach: each grant's root is opened as a directory handle and every operation is resolved relative to it.
+
 The initial implementation will not support:
 
 - Arbitrary network imports.
@@ -1110,7 +1097,18 @@ With `deno_core`, this requires specific measures, because by default every regi
 - A bootstrap script builds the capability globals, then removes `Deno` and `__bootstrap` from the global object before application code is loaded.
 - Built-in `deno_core` operations are audited. Operations that must not be reachable (for example, ones that panic the host process, write directly to stdout, evaluate code, or load modules outside the controlled module loader) are made unreachable or replaced.
 - V8's built-in `console` object is removed before capabilities are injected, so `console` exists only when a host grants it.
-- An adversarial test suite attempts to reach operations, built-ins, and other cells' state from application code, and runs with every change to the runtime.
+- `eval` and `new Function` remain available. They execute in the cell's own isolate with its existing globals and grant no additional authority. The audit targets operations that compile code in a different context or under a host-chosen filename.
+- An adversarial test suite attempts to reach operations, built-ins, and other cells' state from application code, and runs with every change to the runtime. It includes importing `ext:` specifiers such as `ext:core/ops`, dynamic `import()` of absolute and `file:` URLs, and `import.meta.resolve`.
+
+#### Baseline globals
+
+Not every global is a capability. A cell's global scope contains three kinds of names:
+
+- **ECMAScript built-ins**, always present. These include `Date` and `Math.random`, so cells have ambient access to the current time and to randomness. This is accepted under the initial threat model.
+- **Web APIs that reach nothing outside the cell**, provided by the runtime: `TextEncoder`, `TextDecoder`, `URL`, `URLSearchParams`, `structuredClone`, `queueMicrotask`, `atob`, `btoa`, `setTimeout`, `clearTimeout`, `setInterval`, and `clearInterval`. Terminating a cell cancels its timers.
+- **Capabilities**, for anything that affects or observes something outside the cell, including `fetch`, storage, and `console`.
+
+Where the pinned `deno_core` already implements a baseline API, the runtime uses that implementation rather than adopting Deno's web extensions, which would add operations to audit.
 
 ### 7.6 Asynchronous Execution
 
@@ -1132,10 +1130,11 @@ The runtime must support:
 - Asynchronous host operations.
 - Promise rejection and error propagation.
 - Event-loop progression while asynchronous operations are pending.
+- Timers.
 
 `deno_core` provides useful infrastructure for managing V8 execution and asynchronous operations.
 
-More advanced functionality, such as timers, long-running applications, and subscriptions, can be introduced as the application model develops.
+More advanced functionality, such as long-running applications and subscriptions, can be introduced as the application model develops.
 
 ### 7.7 Application Lifecycle and Error Handling
 
@@ -1151,6 +1150,8 @@ The initial execution lifecycle is intentionally simple:
 8. Dispose of the isolate.
 
 The host must be able to terminate execution explicitly.
+
+Each cell has a V8 heap limit. When a cell approaches it, the runtime terminates that cell instead of letting V8 abort the whole process, and the supervisor records the cell as failed. Execution that never yields, such as an infinite loop, is interrupted the same way from the supervisor's side. These measures are partial: memory backing `ArrayBuffer`s lives outside the V8 heap and needs its own allocation limit, and a fault in V8 or the host still affects every cell in the process until cells move into separate worker processes in Stage 2.
 
 The initial implementation does not require sophisticated resource quotas, automatic recovery, scheduling, or process supervision. Those responsibilities will become increasingly important as the supervisor begins managing persistent and concurrently running applications.
 
@@ -1242,6 +1243,7 @@ The initial capability set should remain small. The goal is to validate the arch
 - Support ES modules and relative imports.
 - Support top-level await.
 - Capture execution errors.
+- Assign each cell an identifier, used to tag its output and, from Milestone 2, to look up its grants.
 
 **Milestone 2: Capability injection**
 
@@ -1286,7 +1288,7 @@ Initial supervisor responsibilities should include:
 
 The first host-facing API does not need to be a fully generalized remote management protocol. It should, however, establish a deliberate boundary between supervisor mechanisms and host-specific presentation or policy. The API can evolve as the desktop and server use cases become concrete.
 
-Application-to-application composition is deferred until dogfooding requires it, which is expected when the Dashboard desktop application is built. Until then, the supervisor should avoid decisions that would prevent an application from later acting as a capability provider: capability values remain serializable, operations are dispatched through the supervisor's grant table rather than bound directly to host providers, and capability contracts do not assume a host-implemented provider.
+Application-to-application composition is deferred until dogfooding requires it, which is expected when Dashboard, the first desktop host, is built. Until then, the supervisor should avoid decisions that would prevent an application from later acting as a capability provider: capability values remain serializable, operations are dispatched through the supervisor's grant table rather than bound directly to host providers, and capability contracts do not assume a host-implemented provider.
 
 ### 8.6 Desktop Host
 
@@ -1407,7 +1409,7 @@ Questions to resolve:
 
 ### 9.3 Application Composition and Connection Model
 
-Application composition is central to the platform's purpose. It is expected to be built when dogfooding requires it, beginning with the Dashboard desktop application. Applications will compose by acting as capability providers, using the same grant and dispatch mechanism as host-supplied providers.
+Application composition is central to the platform's purpose. It is expected to be built when dogfooding requires it, beginning with Dashboard, the first desktop host. Applications will compose by acting as capability providers, using the same grant and dispatch mechanism as host-supplied providers.
 
 Questions to resolve:
 
@@ -1611,6 +1613,8 @@ Maintain concise engineering records as the system develops. These should captur
 - Changes to the application, capability, and connection models prompted by real use.
 
 Decision records should explain both the selected approach and the constraints that may cause it to be revisited. They should distinguish demonstrated behavior from intended future behavior.
+
+Temporary implementation decisions that must change at a later stage are marked in code with a `TODO(<stage>)` comment naming that stage, and are also listed in `docs/deferred.md` with the reason and what must change. The stage tags are defined in that file.
 
 ### 10.4 Keep Scope and Claims Aligned
 
