@@ -648,9 +648,8 @@ At a conceptual level, the manifest describes:
 - Version information.
 - Application entry points.
 - Dependencies.
-- Required startup capabilities.
-- Optional startup capabilities.
-- Capabilities that may be requested dynamically during execution.
+- Required capabilities, which must be granted before a cell starts.
+- Optional capabilities, which the host may grant at startup, on first use, or not at all.
 - Other application-specific declarations or configuration requirements.
 
 The manifest should provide a general mechanism for communicating structured declarations to the host. The platform should not need to understand the semantics of every possible capability declaration. Those semantics can be defined by the relevant host services and capability providers.
@@ -665,9 +664,8 @@ A capability declaration communicates what functionality or authority an applica
 
 Capabilities may be classified as:
 
-- Required: The application cannot operate as intended without the capability. The host must satisfy the requirement before starting the application.
-- Optional: The application can operate without the capability, although some functionality may be unavailable.
-- Dynamically Requested: The application may request the capability during execution rather than requiring it at startup.
+- Required: The application cannot operate as intended without the capability. The host must grant it before starting the application.
+- Optional: The application can operate without the capability, although some functionality may be unavailable. The host decides whether and when to grant it (§5.5).
 
 Applications are developed against the capabilities provided by their intended host environment. The platform does not attempt to make every application compatible with every possible host. Instead, it makes application requirements explicit so that hosts can determine whether they can satisfy them.
 
@@ -690,27 +688,27 @@ The following principles govern capability authorization:
 - Applications cannot grant themselves capabilities.
 - The host determines which capabilities are available to each application.
 - Required capabilities must be satisfied before execution.
-- Optional capabilities may be omitted.
-- Unauthorized capabilities are not injected.
+- Optional capabilities may be left ungranted, in which case their operations are rejected.
+- A capability's global carries no authority until the host has authorized the grant behind it.
 - Capability providers enforce the authority represented by their interfaces.
 
 Capability declarations identify the contracts an application expects; the scope of authority behind each granted capability is determined by the host. If a host cannot satisfy an application's required capabilities, it should refuse to start the application. The application developer is responsible for determining which capabilities are required, which are optional, and how the application behaves when optional functionality is unavailable.
 
-### 5.5 Dynamic Capability Requests
+### 5.5 Deferred Grant Resolution
 
-Some applications need access to capabilities that cannot reasonably be determined entirely at startup.
+Some authorization decisions are better made when an application first needs a capability than when it starts. A desktop or mobile application, for example, should be able to run without permission to read the user's contacts, and ask for that permission only when the user tries to import them. A server application typically has every grant decided before it starts.
 
-For example, a desktop application might allow a user to select a directory and subsequently request access to that directory. A server application might have all its required capabilities provisioned before execution and never need to request additional authority.
+The platform supports both with a single mechanism. Every capability declared in an application's manifest is present as a global from the moment the cell starts, whether or not it has been granted (§6.1). The grant behind an optional capability is in one of three states:
 
-Applications should be able to declare which capabilities they may request dynamically.
+- Granted: Operations are dispatched to the provider.
+- Denied: Operations are rejected with a permission error.
+- Unresolved: The host has not decided yet. The first operation that uses the grant causes the supervisor to ask the host for a decision, and the operation proceeds or is rejected according to the result.
 
-When an application requests an additional capability, the host evaluates the request against its authorization policy. Depending on the host environment, this could involve user approval, administrative policy, or automatic authorization.
+When a grant is resolved is host policy, not part of the application's manifest. A desktop host may leave optional grants unresolved and ask the user on first use. A server host may resolve every grant before the cell starts, so that operations either succeed or fail with a permission error. Whether a denied grant can be asked about again is also host policy.
 
-Dynamic capability requests do not provide a mechanism for applications to bypass authorization. Every request must be explicitly authorized by the host before the capability becomes available.
+Deferred resolution does not let applications bypass authorization. An unresolved grant carries no authority; only the host's decision does. Applications handle permission errors as they handle other capability errors (§6.7).
 
-Hosts may choose not to support dynamic requests or may impose policies that prohibit applications requiring them. This allows desktop and server environments to support different authorization models without requiring different application execution architectures.
-
-The details of dynamic request handling, including its API and interaction with running cells, remain implementation decisions.
+Deferred resolution covers grants whose scope is known in advance. It does not cover grants whose scope is chosen at runtime, such as a directory the user selects, possibly more than once. Those would need an operation that returns a new capability object for each selection, similar to the web's `showDirectoryPicker()`. That mechanism, and a way for an application to check a grant's state without triggering a prompt, are deferred until an application needs them.
 
 ### 5.6 Capability Providers and Implementations
 
@@ -788,7 +786,7 @@ The capability model provides a consistent interface between applications and th
 
 A capability is an object injected into an application's execution environment that provides access to a related set of operations.
 
-Each granted capability is injected as a global object when the cell starts. There is no root object; a capability that has not been granted is simply absent.
+Each capability declared in the application's manifest is injected as a global object when the cell starts, whether or not its grant has been resolved yet (§5.5). There is no root object. A global carries no authority by itself: operations on a capability whose grant is denied or withdrawn are rejected. Capabilities the manifest does not declare are absent.
 
 A capability's global is named by the grant name the application chooses in its manifest (§6.3), not by its contract. An application can therefore hold several grants of the same contract, such as two filesystem capabilities with different scopes, under different names.
 
@@ -856,7 +854,7 @@ Each key is a grant name, which becomes the capability's global (§6.1). `contra
 
 If the host does not support a required capability version, it cannot satisfy the application's requirements and should refuse to start the application.
 
-Optional capabilities may be omitted when unavailable.
+If the host cannot provide an optional capability, its grant is denied: the global is still present, and its operations are rejected.
 
 Provider implementation versions are distinct from capability contract versions. The host may update a provider's implementation without changing the capability version, provided the implementation continues to honor the existing contract.
 
@@ -956,7 +954,7 @@ A formal third-party provider plugin system may be introduced later, but is not 
 The capability model establishes the following principles:
 
 - Capabilities are injected objects representing access to functionality or resources.
-- Each granted capability is injected as a global; ungranted capabilities are absent.
+- Each declared capability is injected as a global named by its grant name; its operations are rejected unless its grant is authorized. Undeclared capabilities are absent.
 - Capability contracts are defined using TypeScript interfaces and explicit versions.
 - The host determines which capabilities are available to each application.
 - Capability providers enforce the authority and restrictions associated with their implementations.
@@ -1076,9 +1074,9 @@ Instead, the Rust host implements the underlying operations and exposes narrow J
 
 The execution flow is:
 
-1. The host determines which capabilities are authorized for the cell.
+1. The host determines which declared capabilities are authorized for the cell, leaving unresolved any it will decide on first use.
 2. The runtime constructs the application's V8 environment.
-3. Authorized capability interfaces are injected into that environment.
+3. Capability interfaces for every declared grant are injected into that environment.
 4. Application calls are dispatched through host-controlled bindings.
 5. Trusted host implementations perform the requested operations and return results.
 
@@ -1093,7 +1091,7 @@ Authorization happens on the supervisor's side of the dispatch interface because
 With `deno_core`, this requires specific measures, because by default every registered Rust operation is reachable from JavaScript through `globalThis.Deno.core.ops`, bypassing any capability object:
 
 - Each capability global wraps an opaque grant handle. A capability operation forwards the handle, method, and arguments through a dispatch interface to the supervisor, which looks up the handle in the calling cell's grant table before routing the call to a provider. The operation itself performs no authorization. Calling an operation directly, forging a handle, or using another cell's handle therefore provides no authority beyond what the cell was granted. This is the security boundary; the measures below reduce exposure but are not relied on for authorization.
-- Each cell's runtime registers only the operations for the capabilities granted to that cell.
+- Each cell's runtime registers only the operations for the capabilities declared in that cell's manifest.
 - A bootstrap script builds the capability globals, then removes `Deno` and `__bootstrap` from the global object before application code is loaded.
 - Built-in `deno_core` operations are audited. Operations that must not be reachable (for example, ones that panic the host process, write directly to stdout, evaluate code, or load modules outside the controlled module loader) are made unreachable or replaced.
 - V8's built-in `console` object is removed before capabilities are injected, so `console` exists only when a host grants it.
@@ -1142,7 +1140,7 @@ The initial execution lifecycle is intentionally simple:
 
 1. Create an application isolate.
 2. Construct its execution environment.
-3. Inject authorized capabilities.
+3. Inject declared capabilities.
 4. Load the application entry point and dependencies.
 5. Execute the application.
 6. Drive the event loop until execution completes or is terminated.
@@ -1253,7 +1251,7 @@ The initial capability set should remain small. The goal is to validate the arch
 - Dispatch operations to Rust implementations.
 - Ensure application-created JavaScript objects cannot acquire host authority.
 - Define the dispatch interface and an in-memory grant table. Capability operations forward grant handles through the interface rather than checking grants themselves.
-- Register only granted operations, and remove `Deno` and `__bootstrap` before application code runs.
+- Register only the operations for declared capabilities, and remove `Deno` and `__bootstrap` before application code runs.
 - Audit the built-in `deno_core` operations and start the adversarial escape test suite.
 - Provide a `console` capability in the test host that writes to stdout, tagged with the cell's identity.
 - Validate inputs and outputs at the trusted boundary.
