@@ -61,6 +61,11 @@
   // 2. Baseline web APIs (§7.5 "Baseline globals").
   // ---------------------------------------------------------------------------
 
+  // TODO(os-isolation): ECMAScript's `Date`, `Temporal.Now`, and
+  // `Math.random`, plus the timers below, give every cell ambient time and
+  // randomness. Reassess under the multi-user threat model. See
+  // docs/deferred.md.
+
   // --- Timers -----------------------------------------------------------------
   // Timers run on the cell's own event loop. When a cell is terminated its
   // isolate is destroyed, which cancels every pending timer.

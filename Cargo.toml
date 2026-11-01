@@ -1,11 +1,10 @@
 [workspace]
 resolver = "2"
-members = ["crates/cells-runtime"]
+members = ["crates/cells-runtime", "crates/cells-cli"]
 
 [workspace.package]
 edition = "2024"
 license = "MIT OR Apache-2.0"
-rust-version = "1.90"
 
 [workspace.dependencies]
 # deno_core's API changes between releases, so it and the crates that must

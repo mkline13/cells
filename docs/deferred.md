@@ -21,6 +21,12 @@ Temporary implementation decisions that must change at a later stage. Each entry
 - **Now:** The runtime ships a simple in-memory implementation of the dispatch interface so it can run without the supervisor.
 - **Later:** The supervisor implements the dispatch interface and owns the grant table. The runtime's implementation remains only as a test and embedding convenience.
 
+### Manifest and host config parsing live in the CLI host
+
+- **Tag:** `supervisor`
+- **Now:** `crates/cells-cli` reads `cell.json` and `host.json` and decides each grant itself.
+- **Later:** The supervisor owns manifest validation and the evaluation of requirements against host policy. Hosts supply policy through the supervisor's API instead.
+
 ### Heap-limit termination as the only memory defense
 
 - **Tag:** `worker-processes`

@@ -301,6 +301,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "cells-cli"
+version = "0.1.0"
+dependencies = [
+ "cap-std",
+ "cells-runtime",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "cells-runtime"
 version = "0.1.0"
 dependencies = [

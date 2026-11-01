@@ -1,0 +1,11 @@
+{
+  "name": "notes",
+  "version": "0.1.0",
+  "entry": "main.ts",
+  "capabilities": {
+    "console":   { "contract": "console@1", "required": true },
+    "notes":     { "contract": "files@1",   "required": true },
+    "templates": { "contract": "files@1",   "required": false },
+    "cache":     { "contract": "kv@1",      "required": false }
+  }
+}

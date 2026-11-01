@@ -1,0 +1,7 @@
+{
+  "grants": {
+    "console": { "provider": "stdout" },
+    "notes":   { "provider": "local-files", "root": "data/notes" },
+    "cache":   { "provider": "memory-kv", "decision": "deny" }
+  }
+}

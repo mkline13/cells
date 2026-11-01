@@ -1,0 +1,20 @@
+[package]
+name = "cells-cli"
+version = "0.1.0"
+description = "A command-line test host for the Cells runtime MVP."
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "cells"
+path = "src/main.rs"
+
+[dependencies]
+cells-runtime.workspace = true
+cap-std.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

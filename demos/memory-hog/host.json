@@ -1,0 +1,6 @@
+{
+  "heapLimitMb": 32,
+  "grants": {
+    "console": { "provider": "stdout" }
+  }
+}

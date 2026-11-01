@@ -1,0 +1,14 @@
+{
+  // For editor support only. The runtime strips types without checking them.
+  "compilerOptions": {
+    "target": "ES2024",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "lib": ["ES2024"],
+    "types": [],
+    "strict": true,
+    "noEmit": true
+  },
+  "include": ["**/*.ts", "../../types/*.d.ts"]
+}

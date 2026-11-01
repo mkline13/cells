@@ -1,0 +1,8 @@
+{
+  "grants": {
+    "console":   { "provider": "stdout" },
+    "notes":     { "provider": "local-files", "root": "data/notes" },
+    "templates": { "provider": "local-files", "root": "templates", "readOnly": true },
+    "cache":     { "provider": "json-file-kv", "path": "data/cache.json" }
+  }
+}

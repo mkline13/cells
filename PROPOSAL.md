@@ -1091,7 +1091,7 @@ Authorization happens on the supervisor's side of the dispatch interface because
 With `deno_core`, this requires specific measures, because by default every registered Rust operation is reachable from JavaScript through `globalThis.Deno.core.ops`, bypassing any capability object:
 
 - Each capability global wraps an opaque grant handle. A capability operation forwards the handle, method, and arguments through a dispatch interface to the supervisor, which looks up the handle in the calling cell's grant table before routing the call to a provider. The operation itself performs no authorization. Calling an operation directly, forging a handle, or using another cell's handle therefore provides no authority beyond what the cell was granted. This is the security boundary; the measures below reduce exposure but are not relied on for authorization.
-- Each cell's runtime registers only the operations for the capabilities declared in that cell's manifest.
+- Capability operations are generic: one operation for awaited calls and one for fire-and-forget calls, each carrying a grant handle. Because they perform no authorization, the same two operations are registered for every cell and registering them grants nothing.
 - A bootstrap script builds the capability globals, then removes `Deno` and `__bootstrap` from the global object before application code is loaded.
 - Built-in `deno_core` operations are audited. Operations that must not be reachable (for example, ones that panic the host process, write directly to stdout, evaluate code, or load modules outside the controlled module loader) are made unreachable or replaced.
 - V8's built-in `console` object is removed before capabilities are injected, so `console` exists only when a host grants it.
@@ -1251,7 +1251,7 @@ The initial capability set should remain small. The goal is to validate the arch
 - Dispatch operations to Rust implementations.
 - Ensure application-created JavaScript objects cannot acquire host authority.
 - Define the dispatch interface and an in-memory grant table. Capability operations forward grant handles through the interface rather than checking grants themselves.
-- Register only the operations for declared capabilities, and remove `Deno` and `__bootstrap` before application code runs.
+- Remove `Deno` and `__bootstrap` before application code runs.
 - Audit the built-in `deno_core` operations and start the adversarial escape test suite.
 - Provide a `console` capability in the test host that writes to stdout, tagged with the cell's identity.
 - Validate inputs and outputs at the trusted boundary.

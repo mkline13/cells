@@ -4,7 +4,6 @@ version = "0.1.0"
 description = "Executes TypeScript applications in isolated cells with explicitly granted capabilities."
 edition.workspace = true
 license.workspace = true
-rust-version.workspace = true
 
 [dependencies]
 deno_core.workspace = true
