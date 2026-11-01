@@ -12,7 +12,7 @@ You need a recent stable Rust toolchain (tested with 1.97). The first build down
 cargo run -p cells-cli -- run demos/hello
 ```
 
-Then work through the other demos. [demos/README.md](demos/README.md) explains what each one shows.
+Then work through the other demos. [demos/README.md](demos/README.md) explains what each one shows, and how to debug them in VS Code with breakpoints and the Variables panel (`--inspect-brk`).
 
 ## Layout
 

@@ -6,12 +6,16 @@
 //!
 //! ```text
 //! cells run <app-dir> [--host <host.json>] [--timeout <seconds>]
+//!                     [--inspect[=<port>] | --inspect-brk[=<port>]]
 //! cells inspect <app-dir> [--host <host.json>]
 //! ```
 //!
-//! `--host` defaults to `<app-dir>/host.json`.
+//! `--host` defaults to `<app-dir>/host.json`. `--inspect` and
+//! `--inspect-brk` start a debugger endpoint on `127.0.0.1:9229`; see
+//! `inspector_server`.
 
 mod host_config;
+mod inspector_server;
 mod manifest;
 mod policy;
 mod providers;
@@ -29,6 +33,7 @@ use cells_runtime::CellId;
 use cells_runtime::Engine;
 use cells_runtime::GrantState;
 use cells_runtime::GrantTable;
+use cells_runtime::InspectMode;
 
 use host_config::HostConfig;
 use manifest::Manifest;
@@ -39,15 +44,20 @@ use policy::PlannedGrant;
 const USAGE: &str = "\
 usage:
   cells run <app-dir> [--host <host.json>] [--timeout <seconds>]
+                      [--inspect[=<port>] | --inspect-brk[=<port>]]
   cells inspect <app-dir> [--host <host.json>]
 
---host defaults to <app-dir>/host.json.";
+--host defaults to <app-dir>/host.json.
+--inspect lets a debugger (such as VS Code) attach on 127.0.0.1:9229.
+--inspect-brk also waits for the debugger and pauses on the first line.";
 
 struct Args {
   command: String,
   app_dir: PathBuf,
   host: Option<PathBuf>,
   timeout: Option<Duration>,
+  /// The debugger mode and port, from `--inspect` or `--inspect-brk`.
+  inspect: Option<(InspectMode, u16)>,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -59,7 +69,15 @@ fn parse_args() -> Result<Args, String> {
   let mut app_dir = None;
   let mut host = None;
   let mut timeout = None;
+  let mut inspect = None;
   while let Some(arg) = args.next() {
+    if let Some((mode, port)) = parse_inspect_flag(&arg)? {
+      if inspect.is_some() {
+        return Err("use only one of --inspect and --inspect-brk".into());
+      }
+      inspect = Some((mode, port));
+      continue;
+    }
     match arg.as_str() {
       "--host" => host = Some(PathBuf::from(args.next().ok_or("--host needs a path")?)),
       "--timeout" => {
@@ -80,7 +98,27 @@ fn parse_args() -> Result<Args, String> {
     app_dir: app_dir.ok_or("missing <app-dir>")?,
     host,
     timeout,
+    inspect,
   })
+}
+
+/// Parses `--inspect`, `--inspect=<port>`, `--inspect-brk`, and
+/// `--inspect-brk=<port>`. Returns `None` for any other argument.
+fn parse_inspect_flag(arg: &str) -> Result<Option<(InspectMode, u16)>, String> {
+  let (flag, port) = match arg.split_once('=') {
+    Some((flag, port)) => (flag, Some(port)),
+    None => (arg, None),
+  };
+  let mode = match flag {
+    "--inspect" => InspectMode::Attach,
+    "--inspect-brk" => InspectMode::BreakOnStart,
+    _ => return Ok(None),
+  };
+  let port = match port {
+    Some(p) => p.parse().map_err(|_| format!("{flag} needs a port number, such as {flag}=9229"))?,
+    None => inspector_server::DEFAULT_PORT,
+  };
+  Ok(Some((mode, port)))
 }
 
 fn main() -> ExitCode {
@@ -140,6 +178,14 @@ fn run(args: &Args) -> Result<ExitCode, String> {
   if let Some(mb) = host.heap_limit_mb {
     config.heap_limit = mb * 1024 * 1024;
   }
+  // Bound before the cell starts, so a busy port fails fast.
+  let debugger = match args.inspect {
+    Some((mode, port)) => {
+      config.inspect = Some(mode);
+      Some((mode, inspector_server::InspectorServer::bind(port)?))
+    }
+    None => None,
+  };
   for grant in planned {
     let state = match grant.outcome {
       Outcome::Grant(provider) => GrantState::Granted(provider),
@@ -160,6 +206,19 @@ fn run(args: &Args) -> Result<ExitCode, String> {
   eprintln!("[cells] starting {} {} as {cell}", manifest.name, manifest.version);
   let handle = engine.spawn(config).map_err(|e| e.to_string())?;
 
+  if let (Some((mode, server)), Some(inspector)) = (debugger, handle.inspector()) {
+    eprintln!("[cells] debugger listening on {}", server.websocket_url());
+    if mode == InspectMode::BreakOnStart {
+      eprintln!("[cells] waiting for a debugger to attach; the cell is paused until one does");
+    }
+    let target = inspector_server::Target {
+      title: format!("{} ({cell})", manifest.name),
+      url: format!("cell:///{}", manifest.entry.trim_start_matches("./")),
+    };
+    let _guard = supervisor.enter();
+    server.serve(inspector, target)?;
+  }
+
   // Ctrl-C and --timeout both terminate the cell.
   let terminator = handle.terminator();
   let timeout = args.timeout;
@@ -175,6 +234,11 @@ fn run(args: &Args) -> Result<ExitCode, String> {
       _ = expired => eprintln!("[cells] timeout reached; terminating"),
     }
     terminator.terminate();
+    // A cell waiting for a debugger (--inspect-brk) cannot be interrupted
+    // from outside, so give up on a clean exit after a moment.
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    eprintln!("[cells] the cell did not stop; exiting");
+    std::process::exit(130);
   });
 
   let report = handle.join();

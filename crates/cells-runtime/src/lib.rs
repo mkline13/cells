@@ -44,6 +44,7 @@ mod dispatch;
 mod error;
 mod grants;
 mod ids;
+mod inspector;
 mod loader;
 mod names;
 mod ops;
@@ -76,6 +77,11 @@ pub use grants::Resolve;
 pub use grants::ResolveFuture;
 pub use grants::ResolveRequest;
 pub use ids::CellId;
+pub use inspector::CellInspector;
+pub use inspector::InspectMode;
+pub use inspector::InspectorReceiver;
+pub use inspector::InspectorSender;
+pub use inspector::InspectorSession;
 pub use ids::GrantHandle;
 
 /// JSON values are the wire format for capability arguments and results.

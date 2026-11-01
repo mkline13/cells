@@ -33,6 +33,12 @@ Temporary implementation decisions that must change at a later stage. Each entry
 - **Now:** Each cell has a V8 heap limit, and the runtime terminates a cell that approaches it. `ArrayBuffer` memory outside the V8 heap needs its own allocation limit, and a fault in V8 or the host still affects every cell in the process.
 - **Later:** Cells run in separate worker processes, with operating-system resource limits added at `os-isolation`.
 
+### A cell waiting for a debugger cannot be terminated
+
+- **Tag:** `worker-processes`
+- **Now:** With `--inspect-brk`, the cell's thread blocks inside V8's inspector until a debugger attaches, so `CellHandle::terminate` cannot stop it. The CLI exits the whole process after a short grace period instead.
+- **Later:** A worker process waiting for a debugger can be killed like any other.
+
 ### Dispatch messages travel over in-process channels
 
 - **Tag:** `worker-processes`

@@ -28,6 +28,30 @@ cargo run -p cells-cli -- inspect demos/<name>
 | [`runaway`](runaway/main.ts) | An infinite loop the host stops from outside. Run it with `--timeout 2`, or press Ctrl-C. |
 | [`memory-hog`](memory-hog/main.ts) | A cell that exhausts its 32 MiB heap. It is stopped without taking the host down. |
 
+## Debugging in VS Code
+
+Cells expose V8's debugger over the Chrome DevTools Protocol, the same protocol Node uses. VS Code's built-in JavaScript debugger can attach to them, with breakpoints, stepping, and the Variables panel, all in the TypeScript source.
+
+1. Open the repository folder in VS Code.
+2. Set a breakpoint in a demo's `.ts` file, or add a `debugger;` statement.
+3. In **Run and Debug**, choose **Debug a demo** and press F5. Pick a demo.
+
+VS Code builds `cells`, runs the demo with `--inspect-brk`, and attaches. The configuration is in [`.vscode/launch.json`](../.vscode/launch.json). Program output, and prompts like the notes demo's "Allow? [y/N]", appear in the integrated terminal.
+
+To debug from the command line instead, start the cell yourself:
+
+```bash
+cargo run -p cells-cli -- run demos/notes --inspect-brk
+```
+
+Then attach with **Attach to a running cell** in VS Code, or open `chrome://inspect` in Chrome.
+
+- `--inspect` starts the debugger endpoint but lets the cell run immediately. It suits long-running cells.
+- `--inspect-brk` waits for a debugger, then pauses on the first statement that runs. Imported modules run before the module that imports them, so in `hello` that first statement is in `greeting.ts`.
+- Both accept a port, such as `--inspect=9230`. The default is 9229.
+
+The endpoint only listens on `127.0.0.1` and refuses requests whose `Host` header names anything else. A debugger can read and change anything in the cell, so it is a host feature: the application cannot turn it on.
+
 ## Editor support
 
 Each demo has a `tsconfig.json` and a `globals.d.ts` that declares its capability globals. The shared declarations are in [`types/`](../types). To type-check a demo:

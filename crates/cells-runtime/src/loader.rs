@@ -22,9 +22,6 @@
 //!
 //! Virtual URLs also keep host paths out of stack traces and error messages.
 
-use std::borrow::Cow;
-use std::cell::RefCell;
-use std::collections::HashMap;
 use std::path::Path;
 
 use deno_ast::MediaType;
@@ -60,7 +57,6 @@ pub(crate) fn module_url(relative_path: &str) -> Result<ModuleSpecifier, String>
 
 pub(crate) struct CellModuleLoader {
   root: cap_std::fs::Dir,
-  source_maps: RefCell<HashMap<String, Vec<u8>>>,
 }
 
 impl CellModuleLoader {
@@ -69,10 +65,7 @@ impl CellModuleLoader {
     // application's behalf, and it is confined to the source directory.
     let root =
       cap_std::fs::Dir::open_ambient_dir(source_root, cap_std::ambient_authority())?;
-    Ok(Self {
-      root,
-      source_maps: RefCell::new(HashMap::new()),
-    })
+    Ok(Self { root })
   }
 
   fn load_source(&self, url: &ModuleSpecifier) -> Result<ModuleSource, ModuleLoaderError> {
@@ -115,6 +108,10 @@ impl CellModuleLoader {
   }
 
   /// Strips TypeScript syntax. Types are not checked (§7.3).
+  ///
+  /// The output carries an inline source map whose sources are the original
+  /// `cell:///` URLs, with the TypeScript text embedded. Stack traces and the
+  /// debugger use it to point at TypeScript lines.
   fn transpile(
     &self,
     url: &ModuleSpecifier,
@@ -139,20 +136,15 @@ impl CellModuleLoader {
         },
         &deno_ast::TranspileModuleOptions { module_kind: None },
         &deno_ast::EmitOptions {
-          source_map: SourceMapOption::Separate,
+          // Inline, so both deno_core (for stack traces) and the
+          // debugger (to show TypeScript) find it in the emitted code.
+          source_map: SourceMapOption::Inline,
           inline_sources: true,
           ..Default::default()
         },
       )
       .map_err(JsErrorBox::from_err)?
       .into_source();
-    if let Some(map) = emitted.source_map {
-      // Lets stack traces point at TypeScript lines rather than emitted ones.
-      self
-        .source_maps
-        .borrow_mut()
-        .insert(url.to_string(), map.into_bytes());
-    }
     Ok(emitted.text)
   }
 }
@@ -220,14 +212,6 @@ impl ModuleLoader for CellModuleLoader {
     _options: ModuleLoadOptions,
   ) -> ModuleLoadResponse {
     ModuleLoadResponse::Sync(self.load_source(url))
-  }
-
-  fn get_source_map(&self, specifier: &str) -> Option<Cow<'_, [u8]>> {
-    self
-      .source_maps
-      .borrow()
-      .get(specifier)
-      .map(|v| Cow::Owned(v.clone()))
   }
 }
 

@@ -21,6 +21,8 @@ use crate::contract::Contract;
 use crate::dispatch::Dispatcher;
 use crate::ids::CellId;
 use crate::ids::GrantHandle;
+use crate::inspector::CellInspector;
+use crate::inspector::InspectMode;
 use crate::loader;
 use crate::loader::CellModuleLoader;
 use crate::names;
@@ -57,6 +59,9 @@ pub struct CellConfig {
   pub grants: Vec<CellGrant>,
   /// The V8 heap limit in bytes. See [`DEFAULT_HEAP_LIMIT`].
   pub heap_limit: usize,
+  /// Enables the debugger. `None`, the default, leaves it off. See
+  /// [`crate::CellInspector`].
+  pub inspect: Option<InspectMode>,
 }
 
 impl CellConfig {
@@ -74,6 +79,7 @@ impl CellConfig {
       entry: entry.into(),
       grants: Vec::new(),
       heap_limit: DEFAULT_HEAP_LIMIT,
+      inspect: None,
     }
   }
 }
@@ -189,9 +195,10 @@ impl Engine {
       .map_err(|e| SpawnError(format!("could not start a thread for {id}: {e}")))?;
 
     match ready_rx.recv() {
-      Ok(Ok(isolate)) => Ok(CellHandle {
+      Ok(Ok((isolate, inspector))) => Ok(CellHandle {
         id,
         isolate,
+        inspector,
         terminated,
         wake,
         done: done_rx,
@@ -213,6 +220,7 @@ impl Engine {
 pub struct CellHandle {
   id: CellId,
   isolate: v8::IsolateHandle,
+  inspector: Option<CellInspector>,
   terminated: Arc<AtomicBool>,
   wake: Arc<Notify>,
   done: std::sync::mpsc::Receiver<CellReport>,
@@ -222,6 +230,12 @@ pub struct CellHandle {
 impl CellHandle {
   pub fn id(&self) -> CellId {
     self.id
+  }
+
+  /// Opens debugger sessions on this cell. `None` unless the cell was
+  /// started with [`CellConfig::inspect`] set.
+  pub fn inspector(&self) -> Option<CellInspector> {
+    self.inspector.clone()
   }
 
   /// Stops the cell.
@@ -284,7 +298,7 @@ struct CellSetup {
   wake: Arc<Notify>,
 }
 
-type Ready = std::sync::mpsc::Sender<Result<v8::IsolateHandle, String>>;
+type Ready = std::sync::mpsc::Sender<Result<(v8::IsolateHandle, Option<CellInspector>), String>>;
 
 fn run_cell_thread(setup: CellSetup, ready: Ready) -> CellReport {
   let id = setup.config.id;
@@ -348,6 +362,8 @@ async fn run_cell(
     module_loader: Some(Rc::new(loader)),
     extensions: vec![ops::cells::init()],
     create_params: Some(v8::CreateParams::default().heap_limits(0, config.heap_limit)),
+    inspector: config.inspect.is_some(),
+    is_main: true,
     ..Default::default()
   }) {
     Ok(js) => js,
@@ -404,9 +420,20 @@ async fn run_cell(
     return CellExit::Failed(e.to_string());
   }
 
-  // From here on, the host can terminate the cell.
-  if ready.send(Ok(isolate)).is_err() {
+  let inspector = config
+    .inspect
+    .map(|_| CellInspector::new(js.inspector().get_session_sender()));
+
+  // From here on, the host can terminate the cell, and connect a debugger.
+  if ready.send(Ok((isolate, inspector))).is_err() {
     return CellExit::Terminated;
+  }
+
+  if config.inspect == Some(InspectMode::BreakOnStart) {
+    // Blocks until a debugger attaches and resumes, then pauses on the
+    // application's first statement. The bootstrap script has already run,
+    // so the debugger never stops inside runtime code.
+    js.inspector().wait_for_session_and_break_on_next_statement();
   }
 
   let classify = |result: Result<(), deno_core::error::CoreError>| {

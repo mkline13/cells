@@ -17,7 +17,9 @@ deno_ast = { version = "=0.53.3", features = ["transpiling"] }
 cap-std = "4.0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1.47", features = ["rt", "rt-multi-thread", "sync", "macros", "time", "signal"] }
+tokio = { version = "1.47", features = ["rt", "rt-multi-thread", "sync", "macros", "time", "signal", "net", "io-util"] }
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 tempfile = "3"
 
 cells-runtime = { path = "crates/cells-runtime" }

@@ -1,0 +1,54 @@
+{
+  // Debugging Cells applications in VS Code.
+  //
+  // A cell exposes V8's debugger over the Chrome DevTools Protocol, the same
+  // protocol Node uses, so VS Code's built-in JavaScript debugger ("node")
+  // can attach to it. See demos/README.md, "Debugging in VS Code".
+  "version": "0.2.0",
+  "inputs": [
+    {
+      "id": "demo",
+      "type": "pickString",
+      "description": "Which demo to debug",
+      "options": ["hello", "notes", "sandbox", "runaway", "memory-hog"],
+      "default": "notes"
+    }
+  ],
+  "configurations": [
+    {
+      // Builds `cells`, runs the chosen demo with --inspect-brk, and attaches.
+      // Set breakpoints in the demo's .ts files before starting, or add a
+      // `debugger;` statement.
+      "name": "Debug a demo",
+      "type": "node",
+      "request": "launch",
+      "preLaunchTask": "build cells",
+      "runtimeExecutable": "${workspaceFolder}/target/debug/cells",
+      "runtimeArgs": ["run", "demos/${input:demo}", "--inspect-brk"],
+      "attachSimplePort": 9229,
+      "cwd": "${workspaceFolder}",
+      // The terminal is interactive, so prompts such as the notes demo's
+      // "Allow? [y/N]" can be answered there.
+      "console": "integratedTerminal",
+      "sourceMaps": true,
+      // Module URLs are cell:///<path>. These settings let VS Code load
+      // their source maps and map them to the files on disk.
+      "resolveSourceMapLocations": null,
+      "sourceMapPathOverrides": {
+        "cell:///*": "${workspaceFolder}/demos/${input:demo}/*"
+      }
+    },
+    {
+      // Attaches to a cell already started with --inspect or --inspect-brk.
+      "name": "Attach to a running cell",
+      "type": "node",
+      "request": "attach",
+      "port": 9229,
+      "sourceMaps": true,
+      "resolveSourceMapLocations": null,
+      "sourceMapPathOverrides": {
+        "cell:///*": "${workspaceFolder}/demos/${input:demo}/*"
+      }
+    }
+  ]
+}
