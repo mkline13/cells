@@ -699,7 +699,7 @@ The following principles govern capability authorization:
 - Unauthorized capabilities are not injected.
 - Capability providers enforce the authority represented by their interfaces.
 
-The platform does not negotiate application requirements or silently reduce requested permissions. If a host cannot satisfy an application's required capabilities, it should refuse to start the application. The application developer is responsible for determining which capabilities are required, which are optional, and how the application behaves when optional functionality is unavailable.
+Capability declarations identify the contracts an application expects; the scope of authority behind each granted capability is determined by the host. If a host cannot satisfy an application's required capabilities, it should refuse to start the application. The application developer is responsible for determining which capabilities are required, which are optional, and how the application behaves when optional functionality is unavailable.
 
 ### 5.5 Dynamic Capability Requests
 
@@ -977,6 +977,8 @@ Each application instance executes inside its own V8 isolate.
 
 An isolate provides an independent JavaScript execution environment, including its own global scope, module state, and execution context. Multiple isolates can exist within a single host process, but applications cannot directly access one another's execution environments.
 
+With `deno_core`, a runtime and its isolate are bound to the thread that created them. In-process execution therefore runs each application instance on its own dedicated thread, which drives that instance's event loop. This mirrors the later stages, in which each instance runs in its own worker process.
+
 Applications communicate and share resources exclusively through capabilities provided by the host.
 
 The logical application instance is independent of its eventual implementation unit. An instance may initially execute inside an isolate in the host process, but later execute inside a separate worker process or operating-system sandbox without changing its application-facing interfaces.
@@ -1127,7 +1129,7 @@ Isolation will be developed incrementally.
 
 #### Stage 1: Isolate-based execution
 
-The initial implementation runs the Rust host and application runtime in the same operating-system process. Each application instance receives its own V8 isolate and explicitly injected capabilities.
+The initial implementation runs the Rust host and application runtime in the same operating-system process. Each application instance receives its own V8 isolate, running on a dedicated thread, and explicitly injected capabilities.
 
 This stage proves that the platform can execute TypeScript applications in controlled environments without granting ambient operating-system access.
 
