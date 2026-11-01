@@ -18,23 +18,37 @@ The platform is particularly relevant in an environment where applications are f
 
 The project is not simply a TypeScript runtime, a desktop application manager, or a general-purpose orchestration system. It is a reusable application execution and composition foundation that different host products and environments can use.
 
-### 1.2 Runtime, Platform, and Hosts
+### 1.2 Runtime, Supervisor, and Hosts
 
 The project has three related but distinct parts:
 
-**Application Runtime**
+**Runtime**
 
-The runtime executes an individual application within a controlled environment. It provides the language execution environment, loads application code, and exposes only the capabilities granted by the host. The runtime is a foundational component, not the complete product.
+The runtime executes application code. Each running instance of an application is a **cell**: an isolated execution environment with its own V8 isolate, its own module state, and only the capabilities granted to it. The runtime provides the language execution environment, loads application code, and exposes only the capabilities granted by the host. The runtime is a foundational component, not the complete product.
 
-**Application Platform**
+**Supervisor**
 
-The platform builds on the runtime to define and manage applications and their relationships. It provides the application model, identity, manifests, capability requirements and grants, provider connections, application interfaces, and lifecycle abstractions. The platform is the primary product of this project.
+The supervisor builds on the runtime to define and manage applications, their cells, and their relationships. It provides the application model, identity, manifests, capability requirements and grants, provider connections, application interfaces, and lifecycle abstractions. It records which capabilities each cell holds, verifies that a capability is still valid each time a cell uses it, and dispatches the operation to the provider that implements it. The supervisor is shared by every host and is the primary product of this project.
 
-**Host Applications**
+**Hosts**
 
-A host is a product or system that uses the platform to provide a particular user experience and operating environment. A host may supply configuration, policy, presentation, orchestration, and integrations while relying on the platform for application execution and composition.
+A host is a product or system that uses the supervisor to provide a particular user experience and operating environment. A host supplies policy (which capabilities each application is granted), the capability providers that implement those capabilities, configuration, presentation, orchestration, and integrations, while relying on the supervisor for execution, authorization enforcement, and composition.
 
-These boundaries should be reflected in programmatic interfaces. The platform should not depend on a particular desktop shell, server interface, or orchestration product. A host should be replaceable without requiring application logic or the runtime to be rewritten.
+Providers are specific to a host implementation. Different kinds of hosts, such as a desktop application and a server, should not be assumed to share provider implementations.
+
+These boundaries should be reflected in programmatic interfaces. The supervisor should not depend on a particular desktop shell, server interface, or orchestration product. A host should be replaceable without requiring application logic, the runtime, or the supervisor to be rewritten.
+
+**Terminology**
+
+| Term | Meaning |
+|---|---|
+| Runtime | The component that executes TypeScript application code. |
+| Cell | One running instance of an application: an isolated execution environment with its own granted capabilities. |
+| Capability | An interface injected into a cell that grants authority to affect or observe something outside the cell. |
+| Supervisor | The shared layer that manages applications and cells, records grants, verifies each capability use, and dispatches operations to providers. |
+| Provider | A host-supplied component that implements a capability, such as one that holds database connections and sends queries. |
+| Host | A product that uses the supervisor and supplies policy, providers, configuration, and user experience. |
+| Platform | The system as a whole: runtime, supervisor, and the conventions that hosts and applications share. Not a separate component. |
 
 ### 1.3 The Intended Application Model
 
@@ -83,20 +97,20 @@ The platform is intended to serve as a reusable foundation for different kinds o
 
 It should be possible to use the platform as a complete application environment or to incorporate selected components into a larger system that provides its own management interfaces, orchestration, and operational policies.
 
-For example, a desktop host could use the platform to provide an application environment in which users install tools, inspect their requested capabilities, approve grants, and connect typed interfaces between applications. The desktop host provides the user experience; the platform supplies the application model, execution, capability, and composition infrastructure.
+For example, a desktop host could use the platform to provide an application environment in which users install tools, inspect their requested capabilities, approve grants, and connect typed interfaces between applications. The desktop host provides the user experience; the runtime and supervisor supply the application model, execution, capability, and composition infrastructure.
 
-A server product could use the same platform to run persistent applications, provide remote capabilities, and manage application connections while supplying its own deployment, routing, monitoring, and operational policies. A larger system could also embed only the runtime or selected platform services rather than adopting the complete platform.
+A server product could use the same platform to run persistent applications, provide remote capabilities, and manage application connections while supplying its own deployment, routing, monitoring, and operational policies. A larger system could also embed only the runtime or selected supervisor services rather than adopting the complete platform.
 
 In particular:
 
 - The runtime should be usable independently of the full platform.
-- Platform management and capability configuration should be accessible programmatically.
+- Supervisor management and capability configuration should be accessible programmatically.
 - Hosts and management interfaces should be replaceable.
 - Scheduling, routing, scaling, and other orchestration features should be optional components.
 - Capability providers should be implementable independently and may be hosted locally or remotely.
 - Components should have clearly defined responsibilities and interfaces so larger systems can reuse only the functionality they need.
 
-Embeddability does not require all components to execute in the same process. An embedding system may interact with runtime workers through a supervisor or another defined interface. The platform's architecture should preserve these boundaries even when the initial implementation uses a simpler in-process arrangement.
+Embeddability does not require all components to execute in the same process. An embedding system may interact with runtime workers through a supervisor or another defined interface. The architecture should preserve these boundaries even when the initial implementation uses a simpler in-process arrangement.
 
 ### 1.6 Long-Term Direction
 
@@ -114,12 +128,12 @@ The intended result is a modular foundation for building and composing software:
 
 The first host is planned to be a desktop application that provides a graphical environment for managing and interacting with applications running on the platform. It will serve as the first complete user-facing demonstration and as a way to develop and use independent applications on the platform.
 
-The desktop host is not the platform's defining abstraction. It should consume the platform through programmatic interfaces, so that the platform can later support a server host or be embedded in other products without depending on the desktop implementation.
+The desktop host is not the platform's defining abstraction. It should consume the supervisor through programmatic interfaces, so that the supervisor can later support a server host or be embedded in other products without depending on the desktop implementation.
 
 The intended progression is:
 
 1. Build the application runtime.
-2. Build the core platform and its host-facing programmatic interfaces.
+2. Build the supervisor and its host-facing programmatic interfaces.
 3. Build the first desktop host.
 4. Develop and operate a collection of useful independent applications to validate the platform and its developer experience.
 5. Extend the platform with a server host, remote capabilities, and synchronization where justified by real use cases.
@@ -201,7 +215,7 @@ This symmetry should not imply that local and remote services behave identically
 
 The platform is intended to serve as a reusable foundation for different kinds of products and systems, rather than prescribing a single way of deploying or managing applications.
 
-A desktop host may use the complete platform to provide a personal application environment. A server host may use the same application model for persistent execution and remote services. An existing product may embed the runtime or selected platform services while supplying its own management experience, scheduler, routing, or scaling system.
+A desktop host may use the complete platform to provide a personal application environment. A server host may use the same application model for persistent execution and remote services. An existing product may embed the runtime or selected supervisor services while supplying its own management experience, scheduler, routing, or scaling system.
 
 This separation avoids requiring the project to implement every possible management or orchestration feature itself. It also allows the underlying application and capability model to be reused without adopting a particular product interface.
 
@@ -215,7 +229,7 @@ These motivations lead to the following high-level goals:
 4. **Good developer experience:** Applications should be straightforward for developers and AI agents to create, test, integrate, and operate.
 5. **Environment independence:** Application logic should not depend unnecessarily on whether resources are local, remote, desktop-hosted, or server-hosted.
 6. **Interface independence:** Applications should support multiple interaction methods without coupling their underlying functionality to a particular presentation technology.
-7. **Modularity and embeddability:** The runtime and platform services should be reusable independently and integrable into larger systems.
+7. **Modularity and embeddability:** The runtime and supervisor services should be reusable independently and integrable into larger systems.
 8. **Inspectability and manageability:** Hosts should be able to inspect applications, permissions, dependencies, interfaces, connections, and lifecycle state.
 9. **Incremental evolution:** Each development stage should produce a useful system and validate the assumptions needed for subsequent stages.
 
@@ -243,7 +257,7 @@ Applications should be treated as independent and potentially untrusted units of
 
 One application should not automatically gain access to another application's memory, files, credentials, or internal services. Sharing should happen through explicitly exposed and granted interfaces.
 
-Isolation should be enforced by the platform and its underlying execution environment, not merely by conventions followed by application developers.
+Isolation should be enforced by the runtime, the supervisor, and the underlying execution environment, not merely by conventions followed by application developers.
 
 The architecture should distinguish between logical application boundaries and the mechanisms used to enforce them. A logical application may be implemented using an isolate, process, container, or other execution mechanism, but the application model should not depend on a particular choice.
 
@@ -382,17 +396,16 @@ The platform is organized into several layers with distinct responsibilities. Th
 
 The major components are:
 
-1. Application Runtime: Executes individual TypeScript applications within controlled environments.
-2. Supervisor: Manages application execution and enforces capability grants and security boundaries.
-3. Capability Providers: Implement the resources and services applications are permitted to access.
-4. Platform Services: Provide higher-level application management, composition, service discovery, and lifecycle functionality.
-5. Host Systems: Integrate the platform into a complete product or larger infrastructure system, providing user interfaces, orchestration, and operational policies.
+1. Runtime: Executes TypeScript application code in isolated cells.
+2. Supervisor: Manages applications and cells, enforces capability grants and security boundaries, and provides higher-level application management, composition, and lifecycle services.
+3. Capability Providers: Host-supplied implementations of the resources and services applications are permitted to access.
+4. Host Systems: Integrate the runtime and supervisor into a complete product or larger infrastructure system, providing policy, providers, user interfaces, orchestration, and operational policies.
 
 These components should communicate through well-defined interfaces so they can be implemented, deployed, and replaced independently where appropriate.
 
-The runtime and supervisor form the foundation of the system. Higher-level platform functionality builds on them but should not be required for basic application execution.
+The runtime and the supervisor's enforcement core form the foundation of the system. Higher-level supervisor services, such as application registration, composition, and inspection, build on them but should not be required for basic application execution.
 
-The architecture should support both a standalone platform and embedded deployments in which an external system uses selected components while providing its own management and orchestration functionality.
+The architecture should support both a complete platform and embedded deployments in which an external system uses selected components while providing its own management and orchestration functionality.
 
 ### 4.2 Application Runtime
 
@@ -408,7 +421,7 @@ As the platform matures, the runtime is expected to provide:
 - Host-injected globals and capability interfaces.
 - Asynchronous execution and event-loop management.
 - Useful error reporting, stack traces, and source maps.
-- Support for multiple independent application instances.
+- Support for multiple independent cells.
 - A mechanism for terminating and recovering application execution.
 
 The runtime should not automatically expose ambient access to privileged system resources. Filesystem access, networking, process management, environment variables, and other sensitive functionality must be provided explicitly through host-controlled interfaces.
@@ -439,7 +452,7 @@ It acts as the authority boundary between untrusted applications and the host en
 Its responsibilities include:
 
 - Maintaining application identities and execution configurations.
-- Creating and terminating application instances.
+- Creating and terminating cells.
 - Constructing application environments.
 - Enforcing granted capabilities.
 - Mediating privileged operations.
@@ -514,11 +527,11 @@ UI hosting should remain a separate concern from the core application runtime. A
 
 Although a complete UI hosting implementation is outside the initial MVP, the application model, communication interfaces, and security boundaries must account for it from the beginning.
 
-### 4.6 Platform Services and Application Composition
+### 4.6 Supervisor Services and Application Composition
 
-Platform services provide higher-level functionality for managing applications and their relationships.
+Supervisor services provide higher-level functionality for managing applications and their relationships.
 
-They build on the runtime and supervisor rather than being intrinsic requirements of application execution.
+They build on the runtime and the supervisor's enforcement core rather than being intrinsic requirements of application execution.
 
 Responsibilities may include:
 
@@ -537,7 +550,7 @@ An application should be able to declare its required capabilities independently
 
 For example, an application might declare that it requires read-write access to a particular database interface and permission to invoke a search interface exposed by another application.
 
-The platform resolves these requirements against available providers and host policy. The resulting grants determine the actual capabilities supplied to the application.
+The supervisor resolves these requirements against available providers and host policy. The resulting grants determine the actual capabilities supplied to the application.
 
 This separates three concerns:
 
@@ -545,7 +558,7 @@ This separates three concerns:
 2. Policy: What the host decides to permit.
 3. Enforcement: What the runtime and providers actually allow.
 
-The platform should expose these functions through programmatic interfaces so that standalone management tools and external host systems can use them.
+The supervisor should expose these functions through programmatic interfaces so that standalone management tools and external host systems can use them.
 
 ### 4.7 Embedding and Orchestration
 
@@ -555,7 +568,7 @@ Two broad integration patterns are anticipated.
 
 #### Embedded runtime
 
-An external application incorporates the runtime and manages its application instances through programmatic interfaces.
+An external application incorporates the runtime and manages its cells through programmatic interfaces.
 
 The embedding system may provide its own:
 
@@ -570,9 +583,9 @@ For example, a desktop application could use the runtime to execute installed Ty
 
 #### Integrated platform
 
-A larger system uses the platform's application management and capability abstractions while supplying additional infrastructure and operational policies.
+A larger system uses the supervisor's application management and capability abstractions while supplying additional infrastructure and operational policies.
 
-For example, a web application orchestration platform could use the runtime to execute application instances while managing:
+For example, a web application orchestration platform could use the runtime to execute cells while managing:
 
 - Instance creation and termination.
 - Scheduling and placement.
@@ -584,7 +597,7 @@ For example, a web application orchestration platform could use the runtime to e
 
 The runtime and supervisor should provide the underlying execution and authority enforcement mechanisms without requiring a particular orchestration strategy.
 
-Distributed scheduling, routing, scaling, and high availability are not prerequisites for basic platform functionality. They should be introduced as optional higher-level components or integrations.
+Distributed scheduling, routing, scaling, and high availability are not prerequisites for basic supervisor functionality. They should be introduced as optional higher-level components or integrations.
 
 #### Process and deployment boundaries
 
@@ -614,7 +627,7 @@ The following table summarizes the current proposed technology direction.
 
 These choices are starting points rather than immutable requirements.
 
-In particular, the initial runtime prototype should validate whether `deno_core` provides an appropriate foundation for the desired application model before significant platform functionality is built around it.
+In particular, the initial runtime prototype should validate whether `deno_core` provides an appropriate foundation for the desired application model before significant supervisor functionality is built around it.
 
 The implementation should favor well-defined interfaces and replaceable components over unnecessary dependencies on particular frameworks or infrastructure products.
 
@@ -626,7 +639,7 @@ The goal is to define a consistent model that can support independently develope
 
 ### 5.1 Application Identity and Structure
 
-An application is a logical entity with a stable identity, independent of its implementation, version, or running instances.
+An application is a logical entity with a stable identity, independent of its implementation, version, or running cells.
 
 An application consists of several related elements:
 
@@ -635,15 +648,15 @@ An application consists of several related elements:
 - Code: The executable implementation of the application.
 - Dependencies: Other packages, libraries, or resources required by the application.
 - Configuration: Host-provided settings and application-specific configuration.
-- Persistent State: Data maintained by the application across execution instances and restarts.
+- Persistent State: Data maintained by the application across cells and restarts.
 
-An application may have multiple versions and multiple running instances. These are distinct from the application's logical identity.
+An application may have multiple versions and multiple running cells. These are distinct from the application's logical identity.
 
-The application model should not assume that an application corresponds to a single process, container, or other particular execution unit. The platform determines how applications are instantiated and isolated.
+The application model should not assume that an application corresponds to a single process, container, or other particular execution unit. The supervisor determines how applications are instantiated and isolated.
 
 ### 5.2 Application Manifests
 
-Every application should have a manifest that describes its identity, structure, and requirements to the host platform.
+Every application should have a manifest that describes its identity, structure, and requirements to the host and supervisor.
 
 The manifest provides the information necessary for the host to understand an application before executing it. It should be declarative rather than a general-purpose programming environment.
 
@@ -715,13 +728,13 @@ Dynamic capability requests do not provide a mechanism for applications to bypas
 
 Hosts may choose not to support dynamic requests or may impose policies that prohibit applications requiring them. This allows desktop and server environments to support different authorization models without requiring different application execution architectures.
 
-The details of dynamic request handling, including its API and interaction with running application instances, remain implementation decisions.
+The details of dynamic request handling, including its API and interaction with running cells, remain implementation decisions.
 
 ### 5.6 Capability Providers and Implementations
 
 A capability is an interface through which an application accesses functionality or resources provided by its host environment.
 
-The implementation behind a capability is provided by a capability provider. Providers may be implemented as platform services, independent components, or adapters to external systems.
+The implementation behind a capability is provided by a capability provider. Providers may be implemented as supervisor services, independent components, or adapters to external systems.
 
 Applications should depend on capability contracts rather than particular provider implementations.
 
@@ -729,17 +742,17 @@ For example, a database capability might be implemented using local SQLite, a re
 
 Capability providers are responsible for enforcing the authority represented by their interfaces. TypeScript interfaces and application-level conventions are not security boundaries. Providers must validate operations and enforce applicable restrictions at runtime.
 
-The capability model should be extensible enough to support capabilities implemented by components outside the core platform.
+The capability model should be extensible enough to support capabilities implemented by components outside the runtime and supervisor.
 
 This also preserves the possibility of applications eventually providing capabilities to other applications. First-class application-provided services, discovery, and connection management are deferred until a concrete use case justifies them.
 
-### 5.7 Application Instances and Lifecycle
+### 5.7 Cells and Lifecycle
 
-An application identity is distinct from its running instances.
+An application identity is distinct from its running instances, which are called cells.
 
-A single installed application may have zero or more running instances. Each instance represents an execution of the application within a particular environment.
+A single installed application may have zero or more cells. Each cell represents an execution of the application within a particular environment.
 
-Instances have their own:
+Each cell has its own:
 
 - Execution context.
 - Granted capabilities.
@@ -747,31 +760,31 @@ Instances have their own:
 - Resource allocations and limits.
 - Lifecycle state.
 
-The platform manages application instances independently of the logical application identity.
+The supervisor manages cells independently of the logical application identity.
 
-An application may be installed without currently running, stopped and restarted, or instantiated multiple times where the host permits it.
+An application may be installed without currently running, stopped and restarted, or instantiated as multiple cells where the host permits it.
 
-The platform should support lifecycle operations such as starting, stopping, terminating, and restarting instances. It should also track execution failures and provide mechanisms for monitoring instance health.
+The supervisor should support lifecycle operations such as starting, stopping, terminating, and restarting cells. It should also track execution failures and provide mechanisms for monitoring cell health.
 
-The specific lifecycle states and instance management APIs will be defined during implementation.
+The specific lifecycle states and cell management APIs will be defined during implementation.
 
 ### 5.8 Configuration, Secrets, and Persistent State
 
 Application configuration, secrets, and persistent state are distinct concerns and should be handled through explicit mechanisms.
 
-Configuration consists of settings supplied by the host or application administrator. Configuration may vary between environments and instances.
+Configuration consists of settings supplied by the host or application administrator. Configuration may vary between environments and cells.
 
 Secrets include credentials, tokens, and other sensitive values. They should be provided through narrowly scoped capabilities rather than embedded in application packages or exposed through unrestricted environment variables.
 
-Persistent State consists of data that must survive application restarts and potentially changes to execution instances. Access to persistent storage should be explicitly provisioned and scoped rather than assumed to exist as ambient filesystem access.
+Persistent State consists of data that must survive application restarts and outlive any individual cell. Access to persistent storage should be explicitly provisioned and scoped rather than assumed to exist as ambient filesystem access.
 
-The platform should not assume that application state is tied to a particular execution instance or physical storage location. Hosts may provide local or remote persistence implementations.
+The platform should not assume that application state is tied to a particular cell or physical storage location. Hosts may provide local or remote persistence implementations.
 
 The details of state provisioning, migration, backup, and recovery are implementation concerns, but the application model should preserve the distinction between executable code, configuration, secrets, and persistent data.
 
 ### 5.9 Application Composition and Future Extensions
 
-The capability model provides the foundation for applications to interact with platform services and, potentially, other applications.
+The capability model provides the foundation for applications to interact with supervisor services and, potentially, other applications.
 
 Applications consume capabilities through interfaces injected by their host. The host controls which providers are available and which applications are authorized to use them.
 
@@ -973,15 +986,15 @@ The initial implementation prioritizes proving the core application model: execu
 
 ### 7.1 Execution Model
 
-Each application instance executes inside its own V8 isolate.
+Each cell executes inside its own V8 isolate.
 
 An isolate provides an independent JavaScript execution environment, including its own global scope, module state, and execution context. Multiple isolates can exist within a single host process, but applications cannot directly access one another's execution environments.
 
-With `deno_core`, a runtime and its isolate are bound to the thread that created them. In-process execution therefore runs each application instance on its own dedicated thread, which drives that instance's event loop. This mirrors the later stages, in which each instance runs in its own worker process.
+With `deno_core`, a runtime and its isolate are bound to the thread that created them. In-process execution therefore runs each cell on its own dedicated thread, which drives that cell's event loop. This mirrors the later stages, in which each instance runs in its own worker process.
 
 Applications communicate and share resources exclusively through capabilities provided by the host.
 
-The logical application instance is independent of its eventual implementation unit. An instance may initially execute inside an isolate in the host process, but later execute inside a separate worker process or operating-system sandbox without changing its application-facing interfaces.
+A cell, as a logical unit, is independent of its eventual implementation unit. A cell may initially execute inside an isolate in the host process, but later execute inside a separate worker process or operating-system sandbox without changing its application-facing interfaces.
 
 A V8 isolate provides execution-context separation, but it is not considered a sufficient security boundary against malicious code. Stronger isolation will be introduced in later implementation stages.
 
@@ -1069,7 +1082,7 @@ Instead, the Rust host implements the underlying operations and exposes narrow J
 
 The execution flow is:
 
-1. The host determines which capabilities are authorized for the application instance.
+1. The host determines which capabilities are authorized for the cell.
 2. The runtime constructs the application's V8 environment.
 3. Authorized capability interfaces are injected into that environment.
 4. Application calls are dispatched through host-controlled bindings.
@@ -1121,7 +1134,7 @@ The initial execution lifecycle is intentionally simple:
 
 The host must be able to terminate execution explicitly.
 
-The initial implementation does not require sophisticated resource quotas, automatic recovery, scheduling, or process supervision. Those responsibilities will become increasingly important as the platform begins managing persistent and concurrently running applications.
+The initial implementation does not require sophisticated resource quotas, automatic recovery, scheduling, or process supervision. Those responsibilities will become increasingly important as the supervisor begins managing persistent and concurrently running applications.
 
 ### 7.8 Isolation and Implementation Stages
 
@@ -1129,7 +1142,7 @@ Isolation will be developed incrementally.
 
 #### Stage 1: Isolate-based execution
 
-The initial implementation runs the Rust host and application runtime in the same operating-system process. Each application instance receives its own V8 isolate, running on a dedicated thread, and explicitly injected capabilities.
+The initial implementation runs the Rust host, supervisor, and runtime in the same operating-system process. Each cell receives its own V8 isolate, running on a dedicated thread, and explicitly injected capabilities.
 
 This stage proves that the platform can execute TypeScript applications in controlled environments without granting ambient operating-system access.
 
@@ -1137,7 +1150,7 @@ It is a runtime proof of concept, not a security boundary suitable for executing
 
 #### Stage 2: Separate application worker processes
 
-The host evolves into a supervisor capable of managing application instances in separate worker processes.
+The supervisor evolves to manage cells in separate worker processes.
 
 The supervisor becomes responsible for creating, monitoring, communicating with, and terminating workers. This improves lifecycle management and fault containment, but process separation alone does not provide a robust security boundary if workers retain the same operating-system identity and privileges. Capability operations cross the process boundary through a controlled IPC mechanism.
 
@@ -1171,7 +1184,7 @@ The sequence is intentionally incremental. Each stage should produce a useful, d
 The intended progression is:
 
 1. **Runtime foundation:** Build a Rust-based TypeScript runtime using V8 and `deno_core`, with controlled module loading and host-injected capabilities.
-2. **Core platform and host API:** Build the application model and the trusted host services needed to register, configure, authorize, execute, inspect, and connect applications.
+2. **Supervisor and host API:** Build the application model and the trusted host services needed to register, configure, authorize, execute, inspect, and connect applications.
 3. **Desktop host:** Build a graphical host that uses the platform to manage applications, inspect and approve capabilities, configure connections, and provide application interfaces.
 4. **Independent applications and dogfooding:** Build useful applications on the platform, use them in real workflows, and improve the application model and developer experience based on actual integration needs.
 5. **Server host:** Extend the platform toward persistent server execution, remote capabilities, and synchronization where justified by the applications and workflows developed so far.
@@ -1186,7 +1199,7 @@ The first implementation milestone is a small Rust-based runtime capable of:
 - Initializing V8 through `deno_core`.
 - Loading and executing TypeScript applications.
 - Supporting ES modules and relative imports.
-- Creating a separate V8 isolate for each application instance.
+- Creating a separate V8 isolate for each cell.
 - Injecting explicitly authorized host capabilities.
 - Dispatching capability operations to trusted Rust implementations.
 - Supporting asynchronous capability calls and top-level await.
@@ -1221,27 +1234,27 @@ The initial capability set should remain small. The goal is to validate the arch
 - Ensure application-created JavaScript objects cannot acquire host authority.
 - Validate inputs and outputs at the trusted boundary.
 
-**Milestone 3: Application instances**
+**Milestone 3: Cells**
 
-- Establish the application-instance execution model.
-- Create one isolate per instance.
-- Associate capabilities and configuration with individual instances.
-- Ensure instances cannot directly access one another's execution contexts.
+- Establish the cell execution model.
+- Create one isolate per cell.
+- Associate capabilities and configuration with individual cells.
+- Ensure cells cannot directly access one another's execution contexts.
 - Support explicit termination and cleanup.
 
 **Milestone 4: Runtime demonstration**
 
 Build a small application that uses multiple injected capabilities to demonstrate that application logic is independent of the underlying host implementations. Make it possible to inspect the application's source, capability requirements, and capabilities actually provided to it.
 
-### 8.5 Core Platform and Host API
+### 8.5 Supervisor and Host API
 
-After the runtime foundation is demonstrated, build the smallest useful platform layer around it. This stage should establish the distinction between application requirements, host policy, authorization decisions, and enforcement.
+After the runtime foundation is demonstrated, build the smallest useful supervisor around it. This stage should establish the distinction between application requirements, host policy, authorization decisions, and enforcement.
 
-Initial platform responsibilities should include:
+Initial supervisor responsibilities should include:
 
 - Application identity and registration.
 - Declarative application manifests and validation.
-- Application version and instance metadata sufficient for the initial host.
+- Application version and cell metadata sufficient for the initial host.
 - Capability contract definitions and provider registration.
 - Evaluation of application requirements against host-provided capabilities.
 - Recording and applying authorized grants.
@@ -1249,26 +1262,26 @@ Initial platform responsibilities should include:
 - Basic application lifecycle operations and status inspection.
 - A programmatic interface through which a host can perform these operations.
 
-The first host-facing API does not need to be a fully generalized remote management protocol. It should, however, establish a deliberate boundary between platform mechanisms and host-specific presentation or policy. The API can evolve as the desktop and server use cases become concrete.
+The first host-facing API does not need to be a fully generalized remote management protocol. It should, however, establish a deliberate boundary between supervisor mechanisms and host-specific presentation or policy. The API can evolve as the desktop and server use cases become concrete.
 
-Application-to-application composition should be demonstrated early enough to validate the central thesis. At minimum, the platform should support an application exposing a typed interface and another application receiving an explicitly authorized connection to it. The first implementation can use a simple local transport; the application-facing contract should not depend on that transport.
+Application-to-application composition should be demonstrated early enough to validate the central thesis. At minimum, the supervisor should support an application exposing a typed interface and another application receiving an explicitly authorized connection to it. The first implementation can use a simple local transport; the application-facing contract should not depend on that transport.
 
 ### 8.6 Desktop Host
 
-The first complete host should be a desktop application that consumes the platform through its programmatic interfaces.
+The first complete host should be a desktop application that consumes the supervisor through its programmatic interfaces.
 
 Its initial responsibilities should focus on making the platform usable:
 
 - Display installed applications and their status.
 - Install or register locally developed applications.
-- Start, stop, and inspect application instances.
+- Start, stop, and inspect cells.
 - Display declared capability requirements and actual grants.
 - Allow the operator to configure capability providers and approve grants.
 - Configure connections between application interfaces.
 - Provide a way to open or interact with application user interfaces where supported.
 - Surface application logs and execution errors.
 
-The desktop host is both a user-facing product and a practical test of the platform API. It should not absorb core runtime or authorization responsibilities that belong in the platform. Its interface and presentation choices should remain replaceable.
+The desktop host is both a user-facing product and a practical test of the supervisor API. It should not absorb core runtime or authorization responsibilities that belong in the supervisor. Its interface and presentation choices should remain replaceable.
 
 ### 8.7 Application Development and Dogfooding
 
@@ -1290,7 +1303,7 @@ A server host should be pursued after the desktop environment and independent ap
 
 Likely areas of work include:
 
-- Persistent application instances and process supervision.
+- Persistent cells and process supervision.
 - Remote capability providers and application connections.
 - Deployment and configuration for a headless host.
 - Data persistence, backup, and synchronization.
@@ -1322,11 +1335,11 @@ The runtime foundation is successful when:
 3. The application can use explicitly injected capabilities.
 4. Capability operations are implemented and authorized by trusted host code.
 5. Applications cannot gain host authority by constructing or modifying JavaScript objects.
-6. Separate application instances have separate execution contexts and capability state.
+6. Separate cells have separate execution contexts and capability state.
 7. Asynchronous capability calls work correctly.
 8. The host can observe execution errors and terminate an application.
 
-The core platform is successful when a host can register and inspect applications, evaluate their declared requirements, apply grants, manage instances, and establish at least one authorized application-to-application connection through typed interfaces.
+The supervisor is successful when a host can register and inspect applications, evaluate their declared requirements, apply grants, manage cells, and establish at least one authorized application-to-application connection through typed interfaces.
 
 The desktop host is successful when it can manage and interact with several independently developed applications without containing their application logic or bypassing the platform's authority model.
 
@@ -1338,21 +1351,21 @@ None of these early success criteria imply a complete security boundary against 
 
 The preceding sections establish the initial architecture and development sequence, but several important areas require further design work. These decisions should be made when there is enough implementation experience or a concrete use case to evaluate the tradeoffs. Deferring them should not prevent progress, but the architecture should avoid unnecessarily foreclosing reasonable options.
 
-### 9.1 Platform API and Host Architecture
+### 9.1 Supervisor API and Host Architecture
 
-The platform should expose a programmatic interface that allows host applications to configure and manage it. The exact shape and stability guarantees of that interface can evolve, but the architectural separation between platform mechanisms and host-specific behavior is required from the beginning.
+The supervisor should expose a programmatic interface that allows host applications to configure and manage it. The exact shape and stability guarantees of that interface can evolve, but the architectural separation between supervisor mechanisms and host-specific behavior is required from the beginning.
 
-A future TypeScript host layer may consume the Rust platform API, allowing host-specific configuration, policy, orchestration, and user experiences to be implemented in TypeScript while retaining Rust-based enforcement.
+A future TypeScript host layer may consume the Rust supervisor API, allowing host-specific configuration, policy, orchestration, and user experiences to be implemented in TypeScript while retaining Rust-based enforcement.
 
 Questions to resolve:
 
-- What operations belong in the platform API?
+- What operations belong in the supervisor API?
 - Which operations require administrative authority?
-- How should TypeScript communicate with the Rust platform: native bindings, IPC, or another interface?
+- How should TypeScript communicate with the Rust supervisor: native bindings, IPC, or another interface?
 - Should the API support multiple clients and remote management?
 - How should host extensions be loaded and granted authority?
 - How should host configuration and policy be represented?
-- Which platform operations must remain available when the desktop UI is replaced?
+- Which supervisor operations must remain available when the desktop UI is replaced?
 
 ### 9.2 Host Responsibilities and Different Environments
 
@@ -1360,11 +1373,11 @@ The first host is a desktop application, but the platform should not be designed
 
 - **Desktop host:** User-facing application installation, permission approval, capability connections, application dashboards, and WebView-based interfaces.
 - **Server host:** Administrator-defined policies, automated provisioning, persistent application execution, remote capabilities, synchronization, and remote management.
-- **Embedded host:** A larger application that reuses the runtime or platform services while supplying its own management experience and orchestration.
+- **Embedded host:** A larger application that reuses the runtime or supervisor services while supplying its own management experience and orchestration.
 
 Questions to resolve:
 
-- Which responsibilities are platform mechanisms and which belong to the host?
+- Which responsibilities are supervisor mechanisms and which belong to the host?
 - Which policies are supplied by a user, administrator, or embedding application?
 - How are host-specific capabilities and interfaces declared?
 - What is the minimum host API needed by each environment?
@@ -1431,7 +1444,7 @@ Questions to resolve:
 - How are development and production application layouts related?
 - How are locally developed applications installed and updated by a host?
 
-The packaging model should preserve the distinction between an application's logical identity, its source code, its versions, and its running instances.
+The packaging model should preserve the distinction between an application's logical identity, its source code, its versions, and its running cells.
 
 ### 9.7 Application Interfaces and Presentation
 
@@ -1440,7 +1453,7 @@ Questions to resolve:
 - How are application interfaces declared and discovered?
 - How are WebView and browser interfaces hosted?
 - How are CLI interfaces exposed?
-- How do interfaces communicate with application instances?
+- How do interfaces communicate with cells?
 - How are user identity and authentication handled?
 - How are interfaces prevented from inheriting backend capabilities?
 - How are interfaces exposed locally and remotely?
@@ -1469,7 +1482,7 @@ Questions to resolve:
 - Which persistence mechanisms are built into the platform?
 - How are databases and files provisioned?
 - How are backups, migrations, and recovery handled?
-- How are state and configuration shared across application instances?
+- How are state and configuration shared across cells?
 - How are local and remote storage implementations presented through common contracts?
 - What does synchronization mean for application data, configuration, and application versions?
 - How are conflicts and offline changes handled?
@@ -1485,8 +1498,8 @@ Questions to resolve:
 - How are long-running applications scheduled?
 - How are background jobs and recurring tasks represented?
 - How are application health and availability monitored?
-- How does the platform scale application instances?
-- Which responsibilities belong to the platform versus an external orchestrator?
+- How are cells scaled?
+- Which responsibilities belong to the supervisor versus an external orchestrator?
 
 Scheduling and orchestration should remain optional platform extensions rather than prerequisites for basic application execution.
 
@@ -1496,7 +1509,7 @@ Moving from a single-user environment to shared applications introduces new iden
 
 Questions to resolve:
 
-- How are users, hosts, applications, and application instances identified?
+- How are users, hosts, applications, and cells identified?
 - Who owns an application and its persistent data?
 - How are applications shared with other users?
 - Are grants made by an application owner, host administrator, resource owner, or some combination?
