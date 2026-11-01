@@ -1,0 +1,24 @@
+[workspace]
+resolver = "2"
+members = ["crates/cells-runtime"]
+
+[workspace.package]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.90"
+
+[workspace.dependencies]
+# deno_core's API changes between releases, so it and the crates that must
+# match it are pinned exactly (PROPOSAL.md §4.2). Upgrades are recorded as
+# architectural decisions.
+deno_core = "=0.413.0"
+deno_error = "=0.7.1"
+deno_ast = { version = "=0.53.3", features = ["transpiling"] }
+
+cap-std = "4.0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1.47", features = ["rt", "rt-multi-thread", "sync", "macros", "time", "signal"] }
+tempfile = "3"
+
+cells-runtime = { path = "crates/cells-runtime" }
