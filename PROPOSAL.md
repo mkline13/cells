@@ -1,4 +1,4 @@
-# A Capability-Oriented Application Platform
+# Cells: A Capability-Oriented Application Platform
 
 *Project Proposal and Architecture*
 
@@ -6,7 +6,7 @@
 
 ### 1.1 What Are We Building?
 
-We are building a modular, capability-oriented application platform: a reusable foundation for creating, executing, connecting, and managing independent applications while maintaining explicit control over what each application is allowed to access.
+We are building Cells, a modular, capability-oriented application platform: a reusable foundation for creating, executing, connecting, and managing independent applications while maintaining explicit control over what each application is allowed to access.
 
 The platform is intended to make independently developed software easier to compose into larger systems. Applications should be able to expose useful functionality through typed interfaces, consume capabilities provided by other applications or services, and operate without sharing unrestricted access to one another's implementation or resources.
 
@@ -48,7 +48,7 @@ These boundaries should be reflected in programmatic interfaces. The supervisor 
 | Supervisor | The shared layer that manages applications and cells, records grants, verifies each capability use, and dispatches operations to providers. |
 | Provider | A host-supplied component that implements a capability, such as one that holds database connections and sends queries. |
 | Host | A product that uses the supervisor and supplies policy, providers, configuration, and user experience. |
-| Platform | The system as a whole: runtime, supervisor, and the conventions that hosts and applications share. Not a separate component. |
+| Cells / the platform | The project and system as a whole: runtime, supervisor, and the conventions that hosts and applications share. Not a separate component. Lowercase "cells" always means running application instances. |
 
 ### 1.3 The Intended Application Model
 
@@ -806,24 +806,26 @@ The capability model provides a consistent interface between applications and th
 
 A capability is an object injected into an application's execution environment that provides access to a related set of operations.
 
-Applications access capabilities through a root object named `host`. Capabilities are organized hierarchically beneath this object.
+Each granted capability is injected as a global object when the cell starts. There is no root object; a capability that has not been granted is simply absent.
 
 For example:
 
 ```ts
-const contents = await host.files.readText("hello.txt");
+const contents = await files.readText("hello.txt");
 
-await host.database.query("SELECT * FROM notes");
+await database.query("SELECT * FROM notes");
 
-const response = await host.inference.generate({
+const response = await inference.generate({
   model: "some-model",
   prompt: "Summarize this document"
 });
+
+console.log(response);
 ```
 
-The `host` object is the application's entry point to host-provided functionality. Its constituent capabilities represent distinct interfaces and grants of authority.
+Each capability global represents a distinct interface and grant of authority. The host determines which individual capabilities are made available to each application.
 
-The root object is not itself a single permission. The host determines which individual capabilities are made available to each application.
+Capability globals must not shadow standard ECMAScript globals. A capability may use a name defined by a web standard, such as `console` or `fetch`, only if it implements that standard interface.
 
 Capabilities may expose multiple related operations, and the host may provide different implementations of the same capability contract.
 
@@ -859,10 +861,10 @@ For example:
 ```ts
 {
   capabilities: {
-    "host.files@1": {
+    "files@1": {
       required: true
     },
-    "host.database@2": {
+    "database@2": {
       required: true
     }
   }
@@ -915,12 +917,14 @@ All application-facing capability operations should use asynchronous APIs.
 For example:
 
 ```ts
-const contents = await host.files.readText("hello.txt");
+const contents = await files.readText("hello.txt");
 
-await host.files.writeText("hello.txt", contents);
+await files.writeText("hello.txt", contents);
 ```
 
 Even when a capability is implemented locally and can perform an operation synchronously, its application-facing interface should remain asynchronous.
+
+The one exception is fire-and-forget operations: operations that return nothing and report no errors to the caller, such as `console.log`. These may be synchronous from the application's perspective because they can be implemented as one-way messages over any transport.
 
 This provides a consistent programming model regardless of whether a capability is implemented locally, in another process, or remotely.
 
@@ -966,12 +970,12 @@ A formal third-party provider plugin system may be introduced later, but is not 
 The capability model establishes the following principles:
 
 - Capabilities are injected objects representing access to functionality or resources.
-- Applications access host-provided functionality through the `host` root object.
+- Each granted capability is injected as a global; ungranted capabilities are absent.
 - Capability contracts are defined using TypeScript interfaces and explicit versions.
 - The host determines which capabilities are available to each application.
 - Capability providers enforce the authority and restrictions associated with their implementations.
 - Providers are trusted components of the initial host architecture.
-- Application-facing capability operations are asynchronous.
+- Application-facing capability operations are asynchronous, except fire-and-forget operations that return nothing.
 - Capability implementations may be local, process-isolated, or remote.
 - Capability providers validate inputs and enforce their contracts at runtime.
 - The architecture supports future extensibility without requiring a formal provider plugin system or provider-level isolation in the initial implementation.
@@ -1070,10 +1074,10 @@ These features can be evaluated later without changing the fundamental applicati
 
 Applications receive access to resources and functionality through explicitly injected capabilities.
 
-The application-facing API will be exposed through a host-provided namespace:
+Each granted capability is exposed as a global:
 
 ```ts
-const contents = await host.files.readText("hello.txt");
+const contents = await files.readText("hello.txt");
 ```
 
 The runtime will not expose general-purpose operating-system APIs through Node.js or the full Deno runtime. In particular, applications will not receive ambient filesystem, process, or network access.
@@ -1094,6 +1098,15 @@ An application may construct or modify JavaScript objects that resemble capabili
 
 This distinction must remain true as the implementation evolves from direct in-process calls to IPC between separate processes.
 
+With `deno_core`, this requires specific measures, because by default every registered Rust operation is reachable from JavaScript through `globalThis.Deno.core.ops`, bypassing any capability object:
+
+- Every capability operation checks the cell's grants in Rust before acting. Calling an operation directly therefore provides no authority beyond what the cell was granted. This is the security boundary; the measures below reduce exposure but are not relied on for authorization.
+- Each cell's runtime registers only the operations for the capabilities granted to that cell.
+- A bootstrap script builds the capability globals, then removes `Deno` and `__bootstrap` from the global object before application code is loaded.
+- Built-in `deno_core` operations are audited. Operations that must not be reachable (for example, ones that panic the host process, write directly to stdout, evaluate code, or load modules outside the controlled module loader) are made unreachable or replaced.
+- V8's built-in `console` object is removed before capabilities are injected, so `console` exists only when a host grants it.
+- An adversarial test suite attempts to reach operations, built-ins, and other cells' state from application code, and runs with every change to the runtime.
+
 ### 7.6 Asynchronous Execution
 
 All application-facing capability operations will use asynchronous interfaces, even when the underlying implementation performs a synchronous operation.
@@ -1101,7 +1114,7 @@ All application-facing capability operations will use asynchronous interfaces, e
 For example:
 
 ```ts
-const contents = await host.files.readText("hello.txt");
+const contents = await files.readText("hello.txt");
 ```
 
 This provides a consistent programming model across local implementations, separate processes, and remote providers.
@@ -1227,11 +1240,14 @@ The initial capability set should remain small. The goal is to validate the arch
 
 **Milestone 2: Capability injection**
 
-- Define the application-facing `host` namespace.
+- Define how capability globals are injected.
 - Define TypeScript contracts for initial capabilities.
 - Implement host-controlled JavaScript bindings.
 - Dispatch operations to Rust implementations.
 - Ensure application-created JavaScript objects cannot acquire host authority.
+- Check grants inside each Rust operation, register only granted operations, and remove `Deno` and `__bootstrap` before application code runs.
+- Audit the built-in `deno_core` operations and start the adversarial escape test suite.
+- Provide a `console` capability in the test host that writes to stdout, tagged with the cell's identity.
 - Validate inputs and outputs at the trusted boundary.
 
 **Milestone 3: Cells**
@@ -1264,7 +1280,7 @@ Initial supervisor responsibilities should include:
 
 The first host-facing API does not need to be a fully generalized remote management protocol. It should, however, establish a deliberate boundary between supervisor mechanisms and host-specific presentation or policy. The API can evolve as the desktop and server use cases become concrete.
 
-Application-to-application composition should be demonstrated early enough to validate the central thesis. At minimum, the supervisor should support an application exposing a typed interface and another application receiving an explicitly authorized connection to it. The first implementation can use a simple local transport; the application-facing contract should not depend on that transport.
+Application-to-application composition is deferred until dogfooding requires it, which is expected when the Dashboard desktop application is built. Until then, the supervisor should avoid decisions that would prevent an application from later acting as a capability provider: capability values remain serializable, operations are dispatched through the supervisor's grant table rather than bound directly to host providers, and capability contracts do not assume a host-implemented provider.
 
 ### 8.6 Desktop Host
 
@@ -1339,7 +1355,7 @@ The runtime foundation is successful when:
 7. Asynchronous capability calls work correctly.
 8. The host can observe execution errors and terminate an application.
 
-The supervisor is successful when a host can register and inspect applications, evaluate their declared requirements, apply grants, manage cells, and establish at least one authorized application-to-application connection through typed interfaces.
+The supervisor is successful when a host can register and inspect applications, evaluate their declared requirements, apply grants, and manage cells.
 
 The desktop host is successful when it can manage and interact with several independently developed applications without containing their application logic or bypassing the platform's authority model.
 
@@ -1385,7 +1401,7 @@ Questions to resolve:
 
 ### 9.3 Application Composition and Connection Model
 
-Application composition is central to the platform's purpose and should be validated early, even if a complete discovery or provider ecosystem is deferred.
+Application composition is central to the platform's purpose. It is expected to be built when dogfooding requires it, beginning with the Dashboard desktop application. Applications will compose by acting as capability providers, using the same grant and dispatch mechanism as host-supplied providers.
 
 Questions to resolve:
 
